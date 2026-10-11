@@ -15,3 +15,53 @@ Extraction: The purpose of an extraction window is to determine the transaction 
 How data will be extracted: The extracted process is on each scheduled run, the Prefect flow triggers the extraction task, which scans the entry directory for the target days raw CSV batch files. Then the Python reads these files into in memory pandas DataFrames, which passed in the Transform stage of the pipeline.
 Extraction tool: The Python extraction script using pandas, csv, and json libraries, wrapped as a Prefect @task inside a Prefect @flow. The Prefect handles the scheduling, task tracking, retries and execution logging.
 Extraction schedule: 12:00 AM daily with a maximum of one active run at a time and only 30 minutes execution timeout.
+
+
+
+
+
+
+
+
+3. Extraction Validation and Data Quality Checks
+This stage is to define the checks used to verify that the extracted data is complete, reliable, and suitable for the Transform stage. The checks operate at the extraction level only in the data cleaning, standardization, and business transformations (drop duplicates, fill or remove null values, standardize date and number types) are documented in the Transformation Stage, consistent with the pipeline's data lineage. Each check is executed within the Prefect extraction flow, which tracks task states, catches errors, performs automated retries, and logs execution metrics in real time.
+
+Check Name: Source Connection
+Target: The entry directory path and the extraction tasks access to it.
+Purpose: To verify that the source location is reachable before any file operations are attempted. If a directory level has a failure means an environment or configuration problem, and catching it to prevent the misleading file level errors.
+Validation Criteria: The entry directory exists at the configured path and to the extraction process holds read permission. Then if the check fails if the path does
+
+Check Name: File Accessibility 
+Target: Each expected daily batch file (stocks updates, sales receipts, expense logs in CSV).
+Purpose: To verify that the raw data files required for this extraction window is actually present and readable, since the pipelines declared dependency is the presence of raw log files in the entry directory.
+Validation Criteria: The all expected files for the extraction window exist, are non-empty, and to prise in their declared format (CSV). The purpose of the check fails if any expected file is missing, empty, or indelible, with the affected filename written to the Prefect log.
+
+Check Name: Columns Exist
+Target: The column headers of each extracted batch file, checked against the documented schema.
+Purpose: The schema change in the exported files would silently break downstream loading, so the file structure must match the documented schema before the data is accepted into the pipeline.
+Validation Criteria: Every required column for the domain is present to Stocks (size, quantity, unit, unit_price, updated_at), Sales (customer_name, phone_number, shop_name, quantity, unit_price, sales_date), Expenses (category, description, amount, expense_date). Then the check fails if any required column is missing or renamed.
+
+Check Name: Present Identifiers
+Target: The identifier columns recorded_by (all domains) and stock_id (sales records).
+Purpose: These columns are the foreign keys that extracted records to users and stocks items, as validated in the pipeline design that records without not satisfying the relational constraints of the destination database.
+Validation Criteria: recorded_by and stock_id that contain non-null values in every extracted record. The check fails if any record is missing an identifier value.
+
+Check Name: Primary key uniqueness
+Target: Extracted record within each batch, and key by the domain identifying combination.
+Purpose: To duplicate rows inside a batch would produce duplicate records at load time and inflate sales totals and stock counts, even though the UPSERT logic only protects against re-extraction of the same batch.
+Validation Criteria: Have zero duplicate records exist on the identifying key within each extracted batch. The check fails if any duplicate is detected.
+
+Check Name: Record count Integrity
+Target: Each extracted pandas DataFrame, is compared against the number of data records in its corresponding raw file.
+Purpose: To confirm that each file was read in full rather than shortened. A shortened  read would silently drop records at the end of a file, and those lost of the stock updates, sales or expenses would never reach the database.
+Validation Criteria: For every extracted file, the DataFrame's row count is greater than zero and exactly equals the number of data records counted in the raw file, with header rows excluded. Then the check fails on a zero-row result or any row-count mismatch, with the filename and both counts written to the Prefect log.
+
+Check Name: Domain Completeness
+Target: The set of extraction outputs for the scheduled run across the three operational domains.
+Purpose: To confirm that the run processed all three data domains, so the Transform and Load stages receive a complete dataset for the day rather than a partial one covering only some tables.
+Validation Criteria: All the three domains (stocks, sales, expenses) produced an extracted DataFrame in the run. Then the check fails if any domain is missing from the extraction results, naming the absent domain in the Prefect log.
+
+Check Name: Execution Completion within Time Limit
+Target: The total execution duration of the extraction flow and its final state.
+Purpose: To detect interruptions and hung executions, an extraction that never finishes is as harmful as one that fails, because the schedule expects a completed run before the next day's batch arrives.
+Validation Criteria: The extraction flow reaches a Completed state within the configured 30-minute execution timeout and with a maximum of one active run. The check fails if the timeout is exceeded, and the run is marked failed so it is not treated as successfully extracted data.

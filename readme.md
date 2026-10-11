@@ -1,4 +1,4 @@
-Data Extraction Documentation
+# Data Extraction Documentation
 
 1. Data Source and Extraction Specification
   1. Source System
@@ -65,3 +65,29 @@ Check Name: Execution Completion within Time Limit
 Target: The total execution duration of the extraction flow and its final state.
 Purpose: To detect interruptions and hung executions, an extraction that never finishes is as harmful as one that fails, because the schedule expects a completed run before the next day's batch arrives.
 Validation Criteria: The extraction flow reaches a Completed state within the configured 30-minute execution timeout and with a maximum of one active run. The check fails if the timeout is exceeded, and the run is marked failed so it is not treated as successfully extracted data.
+
+4. 
+    ## Extraction Run Metadata
+
+| Field Name | Purpose | Example Value / Format |
+|---|---|---|
+| Pipeline Run ID | Unique identifier for a specific execution instance of the Prefect extraction flow. | `run_20261011_000000` |
+| Table or File Name | Identifier of the specific source batch file or domain being processed, such as stock updates, sales receipts, or expense logs. | `sales_receipts.csv` |
+| Extraction Start and End Timestamps | Exact timestamps indicating when the Prefect extraction task began and finished. | `2026-10-11 00:00:00 to 2026-10-11 00:00:45` |
+| Extraction Status | Final completion state of the extraction run managed by Prefect. Possible values include APPROVED, REJECTED, or MANUAL REVIEW. | `APPROVED` |
+| Number of Records Read | Total count of raw rows scanned from the source CSV batch files. | `150` |
+| Number of Records Extracted | Total count of valid records captured into pandas DataFrames for downstream processing. | `150` |
+| Number of Records Rejected, if Applicable | Count of source records dropped or quarantined due to extraction-level validation failures. | `0` |
+| Extraction Window or Data Range, if Applicable | Temporal boundary identifying the target date for daily incremental extraction, such as the previous calendar day. | `2026-10-10` |
+| Validation Results | Outcome summary of the nine extraction-level checks, including source connection, file accessibility, schema matching, and foreign key verification. | `PASS` |
+| Error Message or Error Code, if Applicable | Diagnostic message or system code captured by Prefect if a task fails or times out. | `NONE` |
+| Extraction Duration | Total elapsed time required to complete the extraction flow under the 30-minute timeout limit. | `45 seconds` |
+
+### Usage of Metadata and Logs
+    Monitoring: Prefect operational logs and audit summaries track execution schedules, task states, and completion times in real time to ensure daily 12:00 AM runs finish within the 30-minute timeout limit. 
+
+    Troubleshooting: Engineers examine error messages, timestamps, and failed run IDs stored in the dedicated logs directory to diagnose missing batch files, permission blocks, or schema drift. 
+
+    Auditing:  Audit records maintain a permanent history of extracted filenames, row counts per domain, validation outcomes, and run statuses to support business reporting requirements. 
+    
+    Recovery: Operators use run statuses, execution windows, and quarantine logs to safely re-run failed tasks, re-extract corrected source files, and prevent duplicate data insertion.
